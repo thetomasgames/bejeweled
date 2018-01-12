@@ -2,9 +2,21 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
+using UnityEngine.Audio;
 using UnityEngine.UI;
 
 public class GameManager : MonoBehaviour {
+
+	private const float MAX_LEVEL = 5;
+	private const float MIN_LEVEL = 1;
+	public AudioMixer audioMixer;
+	public Slider levelSlider;
+	public AudioSource explosionError;
+	public AudioSource explosion;
+
+	public float level;
+
+	private float levelDecaySpeed = 0.05f;
 
 	private Stopwatch timer = new Stopwatch ();
 	private int score;
@@ -34,6 +46,9 @@ public class GameManager : MonoBehaviour {
 		// return Mathf.Abs (b1.value - b2.value) == 1;
 		return b1.value == b2.value;
 	};
+	private static System.Predicate<List<NumberBlock>> predicateMinimimBlocks = (list) => {
+		return list.Count >= 3;
+	};
 
 	private static System.Func<NumberBlock, NumberBlock, bool> predicate = (b1, b2) => {
 		return predicatePosition (b1, b2) && predicateValue (b1, b2);
@@ -41,6 +56,9 @@ public class GameManager : MonoBehaviour {
 
 	public bool hints;
 	void Start () {
+		level = 1f;
+		levelSlider.minValue = MIN_LEVEL;
+		levelSlider.maxValue = MAX_LEVEL;
 		timer.Start ();
 		rand = new System.Random ();
 		blocks = new List<NumberBlock> ();
@@ -69,16 +87,27 @@ public class GameManager : MonoBehaviour {
 			Destroy (exploded.gameObject);
 		};
 		addScore (explodedBlocks);
+		explosion.Play ();
+		level += (float) explodedBlocks.Count / 10;
+		level = Mathf.Min (MAX_LEVEL, level);
+		audioMixer.SetFloat ("level", (level - 1) * 0.5f + 1);
 	}
 
 	void Update () {
 		if (Input.GetMouseButtonUp (0)) {
 			if (!allowInvalidPath || pathIsValid ()) {
-				NotifyExplosion (dragendBlocks);
+				if (predicateMinimimBlocks (dragendBlocks)) {
+					NotifyExplosion (dragendBlocks);
+				} else {
+					explosionError.Play ();
+					level *= 0.8f;
+				}
 			}
 			dragendBlocks = new List<NumberBlock> ();
 			UpdateBlockShadows ();
 		}
+		level = Mathf.Max (MIN_LEVEL, level -= Time.deltaTime * levelDecaySpeed);
+		levelSlider.value = level;
 		timerText.text = timer.Elapsed.ToString ();
 	}
 	private bool pathIsValid () {
@@ -127,9 +156,9 @@ public class GameManager : MonoBehaviour {
 	private void UpdateBlockShadows () {
 		foreach (var b in blocks) {
 			if (dragendBlocks.Contains (b)) {
-				b.SetShadowColor (Color.blue);
+				b.SetShadowColor (b.main.material.color);
 			} else if (hints && dragendBlocks.Count > 0 && predicate (b, dragendBlocks[dragendBlocks.Count - 1])) {
-				b.SetShadowColor (Color.green);
+				b.SetShadowColor (Color.black);
 			} else {
 				b.ResetShadow ();
 			}
